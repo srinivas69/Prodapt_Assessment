@@ -3,6 +3,7 @@ package uk.co.prodapt.inventory.service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,7 +14,7 @@ import uk.co.prodapt.inventory.model.Supplier;
 @Service
 public class ProductService {
 
-    private final List<Product> products = new ArrayList<>();
+    private final ConcurrentHashMap<Integer, Product> products = new ConcurrentHashMap<>();
     private final SupplierService supplierService;
 
     @Autowired
@@ -21,45 +22,48 @@ public class ProductService {
         this.supplierService = supplierService;
 
         // Initialize some sample products
-        products.add(new Product(1, "Product A", true, 1, null));
-        products.add(new Product(2, "Product B", false, 2, null));
-        products.add(new Product(3, "Product C", true, 3, null));
+        products.put(1, new Product(1, "Product A", true, 1, null));
+        products.put(2, new Product(2, "Product B", false, 2, null));
+        products.put(3, new Product(3, "Product C", true, 3, null));
     }
 
     public List<Product> getAll() {
-        return enrichWithSupplierInfo(new ArrayList<>(products));
+        return enrichWithSupplierInfo(products.values().stream()
+                .distinct()
+                .collect(Collectors.toList()));
     }
 
     public List<Product> getAvailableStockProducts() {
-        List<Product>  filteredPdtsList = products.stream()
-                .filter(product -> product.isAvailable() == true)
-                .collect(Collectors.toList());
-
-        return enrichWithSupplierInfo(filteredPdtsList);
+        return enrichWithSupplierInfo(products.values().stream()
+                .filter(Product::isAvailable)
+                .distinct()
+                .collect(Collectors.toList()));
     }
 
     public Optional<Product> getById(Integer id) {
-        return products.stream()
-                .filter(product -> product.getId().equals(id))
-                .findFirst()
+        return Optional.ofNullable(products.get(id))
                 .map(this::enrichWithSupplierInfo);
     }
 
     public Product create(Product product) {
-        products.add(product);
+        products.computeIfAbsent(product.getId(), key -> product);
         return enrichWithSupplierInfo(product);
     }
 
     public Product update(Integer id, Product updatedProduct) {
-        Product existingProduct = getById(id).orElseThrow(() -> new RuntimeException("Product not found"));
-        existingProduct.setName(updatedProduct.getName());
-        existingProduct.setAvailable(updatedProduct.isAvailable());
-        existingProduct.setSupplierId(updatedProduct.getSupplierId());
-        return enrichWithSupplierInfo(existingProduct);
+        return products.compute(id, (key, existingProduct) -> {
+            if (existingProduct == null) {
+                throw new RuntimeException("Product not found");
+            }
+            existingProduct.setName(updatedProduct.getName());
+            existingProduct.setAvailable(updatedProduct.isAvailable());
+            existingProduct.setSupplierId(updatedProduct.getSupplierId());
+            return enrichWithSupplierInfo(existingProduct);
+        });
     }
 
     public void delete(Integer id) {
-        products.removeIf(product -> product.getId().equals(id));
+        products.remove(id);
     }
 
     private List<Product> enrichWithSupplierInfo(List<Product> products) {
