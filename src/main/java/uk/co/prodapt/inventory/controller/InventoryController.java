@@ -40,7 +40,10 @@ public class InventoryController {
 
     @ApiResponse(responseCode = "200", description = "Returns list of all products", content = @Content(array = @ArraySchema(schema = @Schema(implementation = Product.class))))
     @GetMapping
-    public List<Product> list() {
+    public List<Product> list(@RequestParam(value = "available", required = false, defaultValue = "false") boolean available) {
+        if (available) {
+            return productService.getAvailableStockProducts();
+        }
         return productService.getAll();
     }
 
